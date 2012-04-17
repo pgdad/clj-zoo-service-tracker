@@ -266,9 +266,36 @@ then (1 2 1) and (1 3 1) match, again (2 1 1) would not match."
           (url-of (:file-to-data-ref @tracker-ref) services uri)
           nil)))))
 
-(defn initialize
-  [keepers route-root client-reg-root instance-root]
+(defmacro route-root-node
+  [env app region]
+  `(str "/" ~env "/" ~app "/services/" ~region))
+
+(defmacro client-reg-root-node
+  [env app]
+  `(str "/" ~env "/" ~app "/clientregistrations"))
+
+(defmacro instance-root-node
+  [env app region]
+  `(str "/" ~env "/" ~app "/servers/" ~region))
+
+(defn- ensure-nodes-exist
+  [keepers env app region]
   (let [client (zk/connect keepers)
+        route-root (route-root-node env app region)
+        client-reg-root (client-reg-root-node env app)
+        instance-root (instance-root-node env app region)]
+    (zk/create-all client route-root :peristent? true)
+    (zk/create-all client client-reg-root :peristent? true)
+    (zk/create-all client instance-root :peristent? true)
+    (zk/close client)))
+
+(defn initialize
+  [keepers env app region]
+  (ensure-nodes-exist keepers env app region)
+  (let [client (zk/connect keepers)
+        route-root (route-root-node env app region)
+        client-reg-root (client-reg-root-node env app)
+        instance-root (instance-root-node env app region)
 	file-to-data-ref (ref {})
 	instance-to-load-ref (ref {})
 	i (w/watcher client instance-root
@@ -294,6 +321,7 @@ then (1 2 1) and (1 3 1) match, again (2 1 1) would not match."
                      (fn [file-node] nil)
                      (fn [file-node data] nil))]
     (ref {:keepers keepers
+          :my-region region
           :routes w
           :route-root route-root
           :client-reg-root client-reg-root

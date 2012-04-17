@@ -1,4 +1,4 @@
-(defproject clj-zoo-service-tracker "1.0.0"
+(defproject clj-zoo-service-tracker "1.0.1"
   :description "FIXME: write description"
   :aot [clj-zoo-service-tracker.core]
   :dependencies [[org.clojure/clojure "1.3.0"]
