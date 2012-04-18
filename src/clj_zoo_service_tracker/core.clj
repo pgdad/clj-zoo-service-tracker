@@ -1,162 +1,14 @@
 (ns clj-zoo-service-tracker.core
-  (:require [zookeeper :as zk] [clj-zoo-watcher.core :as w]
+  (:require [zookeeper :as zk]
+            [clj-zoo-watcher.core :as w]
+            [clj-zoo-watcher.multi :as mw]
+            [clj-zoo-service-tracker.util :as util] 
+            [clj-zoo-service-tracker.route :as rt]
+            [clj-zoo-service-tracker.instance :as inst]
+            [clj-zoo-service-tracker.clientRegistration :as clireg]
             [clojure.reflect] [clj-tree-zipper.core :as tz] [clojure.zip :as z]
             [clojure.tools.logging :as log])
   (:gen-class))
-
-(def uri-split-pattern (re-pattern "/"))
-
-(def nl-split-pattern (re-pattern "\n"))
-
-(def version-split-pattern (re-pattern "\\."))
-
-(defn- get-file-data
-  [client file-node]
-  (String. (:data (zk/data client file-node)) "UTF-8"))
-
-(defn- route-created
-  [file-to-data-ref route-root client file-node]
-  ;; sleep a while to make sure the server has time to update the data
-  (. Thread sleep 100)
-  (dosync
-   (let [data (get-file-data client file-node)
-         serv-def (clojure.string/replace-first file-node
-                                                (str route-root "/") "")
-         serv-parts (clojure.string/split serv-def uri-split-pattern)
-         service (first serv-parts)
-         major (read-string (second serv-parts))
-         minor (read-string (nth serv-parts 2))
-         data-parts (clojure.string/split data nl-split-pattern)
-         value {:service service :major major :minor minor
-                :data-version (first data-parts)
-                :instance-node (second data-parts)
-                :url (nth data-parts 2)}
-         f-to-data (ensure file-to-data-ref)]
-     (alter file-to-data-ref (fn [& args]
-                               (assoc f-to-data file-node value))))))
-
-(defn- route-removed
-  [file-to-data-ref file-node]
-  (dosync
-   (let [f-to-data (ensure file-to-data-ref)]
-     (alter file-to-data-ref
-            (fn [& args] (dissoc f-to-data file-node))))))
-
-(defn- client-registration-created
-  [client-regs-ref client-reg-root client dir-node]
-  (dosync
-   (let [registrations (ensure client-regs-ref)
-         reg-def (clojure.string/replace-first dir-node
-                                               (str client-reg-root "/") "")
-         reg-parts (clojure.string/split reg-def uri-split-pattern)
-         service (first reg-parts)
-         is-client (if (= 2 (count reg-parts)) true)
-         servs-for-client (registrations
-                           (if is-client (second reg-parts)))]
-     (log/spy :debug (str " - SERVS FOR: " servs-for-client))
-     (let [client (second reg-parts)
-           new-servs-for-client
-           (if servs-for-client
-             (clojure.set/union servs-for-client #{service})
-             #{service})]
-       (if is-client (alter client-regs-ref
-                            (fn [trans-val] (assoc trans-val  client new-servs-for-client))))))))
-
-(defn- client-registration-removed
-  [client-regs-ref client-reg-root client dir-node]
-  (log/spy :debug (str "CLIENT REGISTRATION REMOVED: " dir-node))
-  (dosync
-   (let [registrations (ensure client-regs-ref)
-         reg-def (clojure.string/replace-first dir-node
-                                               (str client-reg-root "/") "")
-         reg-parts (clojure.string/split reg-def uri-split-pattern)
-         service (first reg-parts)
-         is-client (if (= 2 (count reg-parts)) true)
-         servs-for-client (registrations
-                           (if is-client (second reg-parts)))]
-     (if servs-for-client
-       (let [new-servs (clojure.set/difference servs-for-client
-                                               #{service})]
-         (alter client-regs-ref
-                (assoc registrations client new-servs)))))))
-
-(defn- instance-str-value
-  [data-str]
-  (let [parts (clojure.string/split data-str nl-split-pattern)]
-    {:data-version (first parts)
-     :load (second parts)}))
-
-(defn- instance-value
-  [data]
-  (instance-str-value (String. data "UTF-8")))
-
-(defn- instance-created
-  [instance-to-load-ref instance-root client file-node]
-  ;; sleep a while to make sure the server has time to update the data
-  (. Thread sleep 100)
-  (log/spy :debug (str "INSTANCE CREATED: " file-node))
-  (dosync
-   (Thread/sleep 100)
-   (let [data-str (get-file-data client file-node)
-         i-to-load (ensure instance-to-load-ref)
-         value (instance-str-value data-str)]
-     (alter instance-to-load-ref (fn [& args]
-                                   (assoc i-to-load file-node value))))))
-
-(defn- instance-removed
-  [instance-to-load-ref file-node]
-  (log/spy (str "INSTANCE removed: " file-node))
-  (dosync
-   (let [i-to-load (ensure instance-to-load-ref)]
-     (alter instance-to-load-ref
-            (fn [& args] (dissoc i-to-load file-node))))))
-
-(defn- instance-load-changed
-  [instance-to-load-ref file-node data]
-  (dosync
-   (let [i-to-load (ensure instance-to-load-ref)
-         value (instance-value data)]
-     (alter instance-to-load-ref
-            (fn [& args] (assoc i-to-load file-node value))))))
-
-(defn- extract-service-parts
-  [parts]
-  (let [cnt (count parts)
-	tmp (rest parts)
-	service (first tmp)
-	tmp2 (rest tmp)
-	version (first tmp2)
-	split-version (clojure.string/split version version-split-pattern)
-	ver-major (read-string (first split-version))
-	ver-minor (if (= 2 (count split-version)) (read-string (second split-version)) 0)
-	;; ver-minor 0
-	r-path (clojure.string/join "/" (rest tmp2))
-	m {:service service :ver-major ver-major
-           :ver-minor ver-minor :uri r-path}]
-    m))
-
-(defn- get-service-from-parts
-  [parts]
-  [(second parts) (rest (rest parts))])
-
-(defn- get-version-from-parts
-  [parts]
-  (if (= parts '())
-    nil
-    (let [version (read-string (first parts))
-          v-type (clojure.reflect/reflect version)
-          bases (:bases v-type)
-          is-version (contains? bases 'java.lang.Number)
-          is-minor (and is-version (< 0 (.indexOf (first parts) ".")))
-          minor-part (if is-minor (second (clojure.string/split (first parts) version-split-pattern)) nil)
-          minor (if minor-part (read-string minor-part) 0)
-          ]
-      (if is-minor
-        (list (read-string (first (clojure.string/split (first parts) version-split-pattern))) minor)
-        (if is-version
-          (list version)
-          '()))
-      )))
 
 (defn- get-load
   "given a service instance, fetch server instance load"
@@ -267,23 +119,32 @@ then (1 2 1) and (1 3 1) match, again (2 1 1) would not match."
           nil)))))
 
 (defmacro route-root-node
+  [env app]
+  `(str "/" ~env "/" ~app "/services"))
+
+(defmacro route-root-region-node
   [env app region]
-  `(str "/" ~env "/" ~app "/services/" ~region))
+  `(str (route-root-node ~env ~app) "/" ~region))
 
 (defmacro client-reg-root-node
   [env app]
   `(str "/" ~env "/" ~app "/clientregistrations"))
 
+
 (defmacro instance-root-node
+  [env app]
+  `(str "/" ~env "/" ~app "/servers"))
+
+(defmacro instance-root-region-node
   [env app region]
-  `(str "/" ~env "/" ~app "/servers/" ~region))
+  `(str (instance-root-node ~env ~app) "/" ~region))
 
 (defn- ensure-nodes-exist
   [keepers env app region]
   (let [client (zk/connect keepers)
-        route-root (route-root-node env app region)
+        route-root (route-root-region-node env app region)
         client-reg-root (client-reg-root-node env app)
-        instance-root (instance-root-node env app region)]
+        instance-root (instance-root-region-node env app region)]
     (zk/create-all client route-root :peristent? true)
     (zk/create-all client client-reg-root :peristent? true)
     (zk/create-all client instance-root :peristent? true)
@@ -293,30 +154,43 @@ then (1 2 1) and (1 3 1) match, again (2 1 1) would not match."
   [keepers env app region]
   (ensure-nodes-exist keepers env app region)
   (let [client (zk/connect keepers)
-        route-root (route-root-node env app region)
+        routes-root (route-root-node env app)
+        routes-kids-ref (ref {})
+        route-root (route-root-region-node env app region)
         client-reg-root (client-reg-root-node env app)
-        instance-root (instance-root-node env app region)
+        instance-root (instance-root-region-node env app region)
 	file-to-data-ref (ref {})
 	instance-to-load-ref (ref {})
+        
 	i (w/watcher client instance-root
                      (fn [event] (println (str "CONNECTION EVENT: " event)))
                      (fn [dir-node] nil)
                      (fn [dir-node] nil)
-                     (partial instance-created instance-to-load-ref instance-root client)
-                     (partial instance-removed instance-to-load-ref)
-                     (partial instance-load-changed instance-to-load-ref))
+                     (partial inst/instance-created instance-to-load-ref instance-root client)
+                     (partial inst/instance-removed instance-to-load-ref)
+                     (partial inst/instance-load-changed instance-to-load-ref))
+        mw (try (mw/child-watchers client routes-root
+                       routes-kids-ref
+                       (fn [event] (println (str "CONNECTION EVENT: " event)))
+                       (fn [dir-node] nil)
+                       (fn [dir-node] nil)
+                       (partial rt/route-created file-to-data-ref route-root client)
+                       (partial rt/route-removed file-to-data-ref)
+                       (fn [file-node data] nil))
+                (catch Exception e (println (str "TRACER EX: " e))
+                       (. e printStackTrace)))
         w (w/watcher client route-root
                      (fn [event] (println (str "CONNECTION EVENT: " event)))
                      (fn [dir-node] nil)
                      (fn [dir-node] nil)
-                     (partial route-created file-to-data-ref route-root client)
-                     (partial route-removed file-to-data-ref)
+                     (partial rt/route-created file-to-data-ref route-root client)
+                     (partial rt/route-removed file-to-data-ref)
                      (fn [file-node data] nil))
 	client-regs-ref (ref {})
 	c (w/watcher client client-reg-root
                      (fn [event] (println (str "CONNECTION EVENT: " event)))
-                     (partial client-registration-created client-regs-ref client-reg-root client)
-                     (partial client-registration-removed  client-regs-ref client-reg-root client)
+                     (partial clireg/client-registration-created client-regs-ref client-reg-root client)
+                     (partial clireg/client-registration-removed  client-regs-ref client-reg-root client)
                      (fn [file-node] nil)
                      (fn [file-node] nil)
                      (fn [file-node data] nil))]
@@ -324,6 +198,8 @@ then (1 2 1) and (1 3 1) match, again (2 1 1) would not match."
           :my-region region
           :routes w
           :route-root route-root
+          :routes-root routes-root
+          :routes-multi mw
           :client-reg-root client-reg-root
           :client-regs c
           :client-regs-ref client-regs-ref
