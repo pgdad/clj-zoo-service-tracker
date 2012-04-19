@@ -96,6 +96,19 @@ then (1 2 1) and (1 3 1) match, again (2 1 1) would not match."
   (let [value (@file-to-data-ref service-instance)]
     (str (:url value) uri)))
 
+(defn- lookup-regional-service
+  [tracker-ref my-region service major minor uri]
+  (println (str "REGIONAL LOOKUP FOR: " my-region))
+  (println (str "REGIONAL LOOKUP KID: " (:kids-ref @tracker-ref)))
+  (let [kids-ref (:kids-ref @tracker-ref)
+	have-region (contains? @kids-ref my-region)]
+    (if have-region
+	(let [services (lookup-services (:instance-to-load @tracker-ref)
+					(:file-to-data-ref @tracker-ref)
+			 		(:route-root @tracker-ref)
+					service major minor)]
+	   (println (str "HAVE MY-REGION: " my-region))))))
+
 (defn lookup-service
   [tracker-ref service major minor uri]
   (if (and (= major -1) (= minor -1))
@@ -110,10 +123,23 @@ then (1 2 1) and (1 3 1) match, again (2 1 1) would not match."
       nil
       ;; minor = -1 means take any
       (let [m (if (= -1 minor) 0 minor)
+            my-region (:my-region @tracker-ref)
+	    routes-multi (:routes-multi @tracker-ref)
+	    kids-ref (:kids-ref @routes-multi)
             services (lookup-services (:instance-to-load-ref @tracker-ref)
                                       (:file-to-data-ref @tracker-ref)
                                       (:route-root @tracker-ref)
-                                      service major minor)]
+                                      service major minor)
+	   regional-services (lookup-regional-service
+		tracker-ref
+		my-region
+		service
+		major
+		minor
+		uri)]
+	(println (str "MY-REGION: " my-region))
+	(println (str "MULTI-ROUTES: " @routes-multi))
+	(println (str "KIDS-REF: " @kids-ref))
         (if services
           (url-of (:file-to-data-ref @tracker-ref) services uri)
           nil)))))
@@ -139,15 +165,29 @@ then (1 2 1) and (1 3 1) match, again (2 1 1) would not match."
   [env app region]
   `(str (instance-root-node ~env ~app) "/" ~region))
 
+(defn- ensure-root-exists
+  [keepers]
+  (let [keepers-parts (clojure.string/split keepers #"/")
+        host-part (first keepers-parts)
+        chroot-part (second keepers-parts)]
+    (if chroot-part
+       (let [client (zk/connect host-part)]
+          (zk/create-all client (str "/" chroot-part) :persistent? true)))))
+
 (defn- ensure-nodes-exist
   [keepers env app region]
+  (ensure-root-exists keepers)
   (let [client (zk/connect keepers)
         route-root (route-root-region-node env app region)
         client-reg-root (client-reg-root-node env app)
         instance-root (instance-root-region-node env app region)]
-    (zk/create-all client route-root :peristent? true)
-    (zk/create-all client client-reg-root :peristent? true)
-    (zk/create-all client instance-root :peristent? true)
+    (log/spy :info (str "Ensuring route root node exists: " route-root))
+    (zk/create-all client route-root :persistent? true)
+    (log/spy :info (str "Ensuring client registration root node exists: "
+	client-reg-root))
+    (zk/create-all client client-reg-root :persistent? true)
+    (log/spy :info (str "Ensuring instance root node exists: " instance-root))
+    (zk/create-all client instance-root :persistent? true)
     (zk/close client)))
 
 (defn initialize
@@ -169,7 +209,7 @@ then (1 2 1) and (1 3 1) match, again (2 1 1) would not match."
                      (partial inst/instance-created instance-to-load-ref instance-root client)
                      (partial inst/instance-removed instance-to-load-ref)
                      (partial inst/instance-load-changed instance-to-load-ref))
-        mw (try (mw/child-watchers client routes-root
+        mw (mw/child-watchers client routes-root
                        routes-kids-ref
                        (fn [event] (println (str "CONNECTION EVENT: " event)))
                        (fn [dir-node] nil)
@@ -177,8 +217,6 @@ then (1 2 1) and (1 3 1) match, again (2 1 1) would not match."
                        (partial rt/route-created file-to-data-ref route-root client)
                        (partial rt/route-removed file-to-data-ref)
                        (fn [file-node data] nil))
-                (catch Exception e (println (str "TRACER EX: " e))
-                       (. e printStackTrace)))
         w (w/watcher client route-root
                      (fn [event] (println (str "CONNECTION EVENT: " event)))
                      (fn [dir-node] nil)
