@@ -129,17 +129,17 @@ then (1 2 1) and (1 3 1) match, again (2 1 1) would not match."
             services (lookup-services (:instance-to-load-ref @tracker-ref)
                                       (:file-to-data-ref @tracker-ref)
                                       (:route-root @tracker-ref)
-                                      service major minor)
-	   regional-services (lookup-regional-service
-		tracker-ref
-		my-region
-		service
-		major
-		minor
-		uri)]
-	(println (str "MY-REGION: " my-region))
-	(println (str "MULTI-ROUTES: " @routes-multi))
-	(println (str "KIDS-REF: " @kids-ref))
+                                      service major minor)]
+;	   regional-services (lookup-regional-service
+;		tracker-ref
+;		my-region
+;		service
+;		major
+;		minor
+;;		uri)]
+;	(println (str "MY-REGION: " my-region))
+;	(println (str "MULTI-ROUTES: " @routes-multi))
+;	(println (str "KIDS-REF: " @kids-ref))
         (if services
           (url-of (:file-to-data-ref @tracker-ref) services uri)
           nil)))))
@@ -203,35 +203,40 @@ then (1 2 1) and (1 3 1) match, again (2 1 1) would not match."
 	instance-to-load-ref (ref {})
         
 	i (w/watcher client instance-root
-                     (fn [event] (println (str "CONNECTION EVENT: " event)))
-                     (fn [dir-node] nil)
-                     (fn [dir-node] nil)
+                     (fn [event]
+                       (println (str "CONNECTION EVENT: " event)))
+                     (fn [data-ref dir-node] nil)
+                     (fn [data-ref dir-node] nil)
                      (partial inst/instance-created instance-to-load-ref instance-root client)
                      (partial inst/instance-removed instance-to-load-ref)
-                     (partial inst/instance-load-changed instance-to-load-ref))
+                     (partial inst/instance-load-changed instance-to-load-ref)
+                     nil)
         mw (mw/child-watchers client routes-root
                        routes-kids-ref
                        (fn [event] (println (str "CONNECTION EVENT: " event)))
-                       (fn [dir-node] nil)
-                       (fn [dir-node] nil)
+                       (fn [data-ref dir-node] nil)
+                       (fn [data-ref dir-node] nil)
                        (partial rt/route-created file-to-data-ref route-root client)
                        (partial rt/route-removed file-to-data-ref)
-                       (fn [file-node data] nil))
+                       (fn [file-node data] nil)
+                       nil)
         w (w/watcher client route-root
                      (fn [event] (println (str "CONNECTION EVENT: " event)))
-                     (fn [dir-node] nil)
-                     (fn [dir-node] nil)
+                     (fn [data-ref dir-node] nil)
+                     (fn [data-ref dir-node] nil)
                      (partial rt/route-created file-to-data-ref route-root client)
                      (partial rt/route-removed file-to-data-ref)
-                     (fn [file-node data] nil))
+                     (fn [file-node data] nil)
+                     nil)
 	client-regs-ref (ref {})
 	c (w/watcher client client-reg-root
                      (fn [event] (println (str "CONNECTION EVENT: " event)))
                      (partial clireg/client-registration-created client-regs-ref client-reg-root client)
                      (partial clireg/client-registration-removed  client-regs-ref client-reg-root client)
-                     (fn [file-node] nil)
-                     (fn [file-node] nil)
-                     (fn [file-node data] nil))]
+                     (fn [data-ref file-node] nil)
+                     (fn [data-ref file-node] nil)
+                     (fn [data-ref file-node data] nil)
+                     nil)]
     (ref {:keepers keepers
           :my-region region
           :routes w

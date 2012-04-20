@@ -4,7 +4,7 @@
 
 
 (defn route-created
-  [file-to-data-ref route-root client file-node]
+  [file-to-data-ref route-root client data-ref file-node]
   ;; sleep a while to make sure the server has time to update the data
   (. Thread sleep 100)
   (dosync
@@ -25,7 +25,7 @@
                                (assoc f-to-data file-node value))))))
 
 (defn route-removed
-  [file-to-data-ref file-node]
+  [file-to-data-ref data-ref file-node]
   (dosync
    (let [f-to-data (ensure file-to-data-ref)]
      (alter file-to-data-ref

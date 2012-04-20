@@ -4,7 +4,7 @@
   (:gen-class))
 
 (defn client-registration-created
-  [client-regs-ref client-reg-root client dir-node]
+  [client-regs-ref client-reg-root client data-ref dir-node]
   (dosync
    (let [registrations (ensure client-regs-ref)
          reg-def (clojure.string/replace-first dir-node
@@ -24,7 +24,7 @@
                             (fn [trans-val] (assoc trans-val  client new-servs-for-client))))))))
 
 (defn client-registration-removed
-  [client-regs-ref client-reg-root client dir-node]
+  [client-regs-ref client-reg-root client data-ref dir-node]
   (log/spy :debug (str "CLIENT REGISTRATION REMOVED: " dir-node))
   (dosync
    (let [registrations (ensure client-regs-ref)
