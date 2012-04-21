@@ -4,6 +4,7 @@
             [clj-zoo-watcher.multi :as mw]
             [clj-zoo-service-tracker.util :as util] 
             [clj-zoo-service-tracker.route :as rt]
+            [clj-zoo-service-tracker.regionalRoutes :as regrts]
             [clj-zoo-service-tracker.instance :as inst]
             [clj-zoo-service-tracker.clientRegistration :as clireg]
             [clojure.reflect] [clj-tree-zipper.core :as tz] [clojure.zip :as z]
@@ -21,15 +22,15 @@
     l))
 
 (defn- major-minor-order
-  [instance-to-load-ref file-to-data-ref item]
-  (let [serv-data (@file-to-data-ref item)
+  [file-to-data item]
+  (let [serv-data (file-to-data item)
 	current-load (get-load item)
 	res (+ (* 10000 (:major serv-data)) (* 100 (:minor serv-data)))]
     res))
 
 (defn- major-minor-order-rev
-  [instance-to-load-ref file-to-data-ref item]
-  (* -1 (major-minor-order instance-to-load-ref file-to-data-ref item)))
+  [file-to-data item]
+  (* -1 (major-minor-order file-to-data item)))
 
 (defn- highest-major-order
   [tree]
@@ -37,25 +38,32 @@
 
 (defn- minor-filter
   "major and minor are know"
-  [file-to-data-ref item minor]
-  (let [serv-data (@file-to-data-ref item)]
+  [file-to-data item minor]
+  (let [serv-data (file-to-data item)]
     (<= minor (:minor serv-data))))
 
 
+(defn- regional-value-of
+  [tracker-ref region service-instance]
+  (let [regional-routes-ref (:regional-routes-ref @tracker-ref)
+        regional-f-to-data (@regional-routes-ref region)]
+    (regional-f-to-data service-instance)))
+
 (defn- lookup-latest
   "returns nil if no services available, else returns the highest versioned one"
-  [instance-to-load-ref file-to-data-ref route-root service]
+  [tracker-ref region service]
   (dosync
-   (log/spy :debug "LOOKING UP LATEST")
-   (let [f-to-data (ensure file-to-data-ref)
-         nodes (keys f-to-data)
-         node-prefix (str route-root "/" service)
-         for-service (filter (fn [item]
-                               (.startsWith item node-prefix))
-                             nodes)
-         high-order (sort-by (partial major-minor-order-rev instance-to-load-ref file-to-data-ref) for-service)]
-     (if (and high-order (not (= high-order '())))
-       (first high-order)
+   (let [regional-routes-ref (:regional-routes-ref @tracker-ref)
+         regional-f-to-data ((ensure regional-routes-ref) region) 
+         regional-nodes (keys regional-f-to-data)
+         regional-for-service (filter (fn [item]
+                                        (= service
+                                           (:service (regional-value-of tracker-ref region item))))
+                                      regional-nodes)
+         regional-high-order (sort-by (partial major-minor-order-rev regional-f-to-data)
+                                      regional-for-service)]
+     (if (and regional-high-order (not (= regional-high-order '())))
+       (first regional-high-order)
        nil))))
 
 (defn- lookup-services
@@ -75,74 +83,84 @@ For example, if available services are:
 '(1 1 1), (1 2 1), (1 3 1) and <MAJOR> == 1, <MINOR> == 2,
 then (1 2 1) and (1 3 1) match, again (2 1 1) would not match."
 
-  [instance-to-load-ref file-to-data-ref route-root service major minor]
+  [tracker-ref region service major minor]
   (log/spy :debug (str "LOOKUP SERVICES: " (list service major minor)))
   (dosync
-    (let [f-to-data (ensure file-to-data-ref)
-	nodes (keys f-to-data)
-	node-prefix (str route-root "/" service "/" major)
-	for-service (filter (fn [item]
-				(and (.startsWith item node-prefix)
-					(minor-filter file-to-data-ref item minor)))
-				nodes)]
-      (log/spy :debug (str "LOOKUP SERVICES for-service: " for-service))
-	(if (and for-service (not (= for-service '())))
-		(first (sort-by get-load for-service))
-		nil))))
+   (let [regional-routes-ref (:regional-routes-ref @tracker-ref)
+         regional-f-to-data ((ensure regional-routes-ref) region) 
+         regional-nodes (keys regional-f-to-data)
+         regional-for-service (filter (fn [item]
+                                        (and (= service
+                                                (:service (regional-value-of tracker-ref
+                                                                             region item)))
+                                             (minor-filter regional-f-to-data item minor)))
+                                      regional-nodes)]
+     (log/spy :debug (str "LOOKUP SERVICES for-service: " regional-for-service))
+     (if (and regional-for-service (not (= regional-for-service '())))
+       (first (sort-by get-load regional-for-service))
+       nil))))
 
-(defn- url-of
-  [file-to-data-ref service-instance uri]
-  (log/spy :debug (str "URL of: " service-instance))
-  (let [value (@file-to-data-ref service-instance)]
-    (str (:url value) uri)))
+(defn- regional-url-of
+  [tracker-ref region service-instance uri]
+  (log/spy :debug (str "REGIONAL URL of: " service-instance " Region: " region))
+  (str (:url (regional-value-of tracker-ref region service-instance)) uri))
 
-(defn- lookup-regional-service
-  [tracker-ref my-region service major minor uri]
-  (println (str "REGIONAL LOOKUP FOR: " my-region))
-  (println (str "REGIONAL LOOKUP KID: " (:kids-ref @tracker-ref)))
-  (let [kids-ref (:kids-ref @tracker-ref)
-	have-region (contains? @kids-ref my-region)]
-    (if have-region
-	(let [services (lookup-services (:instance-to-load @tracker-ref)
-					(:file-to-data-ref @tracker-ref)
-			 		(:route-root @tracker-ref)
-					service major minor)]
-	   (println (str "HAVE MY-REGION: " my-region))))))
+;; function to be used to filter out regions based on client id
+(defn- filter-lookup-regions
+  [client-id region]
+  (or (.endsWith region (str "-" client-id))
+      (= -1 (.indexOf region "-"))))
+
+(defn- sort-lookup-regions
+  [my-region regions client-id]
+  (sort-by (fn [item]
+             (if (= item (str my-region "-" client-id))
+               -2
+               (if (.endsWith item (str "-" client-id))
+                 -1
+                 (if (= my-region item)
+                   0
+                   1))))
+           regions))
+
+(defn- allowed-regions-sorted
+  [my-region regions client-id]
+  (sort-lookup-regions my-region
+                       (filter (partial filter-lookup-regions client-id) regions)
+                       client-id))
+
+(defn- lookup-latest-in-regions
+  [regions tracker-ref my-region service uri]
+  (loop [xs regions]
+    (when (seq xs)
+      (let [latest (lookup-latest tracker-ref (first xs) service)]
+        (if-not latest
+          (recur (next xs))
+          (regional-url-of tracker-ref (first xs) latest uri))))))
+
+(defn- lookup-services-in-regions
+  [regions tracker-ref service major minor uri]
+  (loop [xs regions]
+    (when (seq xs)
+      (let [services (lookup-services tracker-ref (first xs) service major minor)]
+        (if-not services
+          (recur (next xs))
+          (regional-url-of tracker-ref (first xs) services uri))))))
 
 (defn lookup-service
-  [tracker-ref service major minor uri]
-  (if (and (= major -1) (= minor -1))
-    ;; this means the latest version (major minor combo)
-    (let [latest (lookup-latest (:instance-to-load-ref @tracker-ref)
-                                (:file-to-data-ref @tracker-ref)
-                                (:route-root @tracker-ref) service)]
-      (if latest
-        (url-of (:file-to-data-ref @tracker-ref) latest uri)
-        nil))
-    (if (= major -1)
-      nil
-      ;; minor = -1 means take any
-      (let [m (if (= -1 minor) 0 minor)
-            my-region (:my-region @tracker-ref)
-	    routes-multi (:routes-multi @tracker-ref)
-	    kids-ref (:kids-ref @routes-multi)
-            services (lookup-services (:instance-to-load-ref @tracker-ref)
-                                      (:file-to-data-ref @tracker-ref)
-                                      (:route-root @tracker-ref)
-                                      service major minor)]
-;	   regional-services (lookup-regional-service
-;		tracker-ref
-;		my-region
-;		service
-;		major
-;		minor
-;;		uri)]
-;	(println (str "MY-REGION: " my-region))
-;	(println (str "MULTI-ROUTES: " @routes-multi))
-;	(println (str "KIDS-REF: " @kids-ref))
-        (if services
-          (url-of (:file-to-data-ref @tracker-ref) services uri)
-          nil)))))
+  [tracker-ref service major minor uri client-id]
+  (let [routes-multi (:routes-multi @tracker-ref)
+        regions (keys @(:kids-ref @routes-multi))
+        sorted-regions (allowed-regions-sorted (:my-region @tracker-ref) regions client-id)]
+    (if (and (= major -1) (= minor -1))
+      ;; this means the latest version (major minor combo)
+      (lookup-latest-in-regions sorted-regions tracker-ref (:my-region @tracker-ref) service uri)
+
+      (if (= major -1)
+        nil
+        ;; minor = -1 means take any
+        (let [m (if (= -1 minor) 0 minor)]
+          (lookup-services-in-regions sorted-regions tracker-ref service major m uri))))))
 
 (defmacro route-root-node
   [env app]
@@ -194,6 +212,7 @@ then (1 2 1) and (1 3 1) match, again (2 1 1) would not match."
   [keepers env app region]
   (ensure-nodes-exist keepers env app region)
   (let [client (zk/connect keepers)
+        regional-routes-ref (regrts/new)
         routes-root (route-root-node env app)
         routes-kids-ref (ref {})
         route-root (route-root-region-node env app region)
@@ -207,27 +226,27 @@ then (1 2 1) and (1 3 1) match, again (2 1 1) would not match."
                        (println (str "CONNECTION EVENT: " event)))
                      (fn [data-ref dir-node] nil)
                      (fn [data-ref dir-node] nil)
-                     (partial inst/instance-created instance-to-load-ref instance-root client)
-                     (partial inst/instance-removed instance-to-load-ref)
-                     (partial inst/instance-load-changed instance-to-load-ref)
+                     (partial inst/instance-created instance-to-load-ref instance-root client nil)
+                     (partial inst/instance-removed instance-to-load-ref nil)
+                     (partial inst/instance-load-changed instance-to-load-ref nil)
                      nil)
         mw (mw/child-watchers client routes-root
                        routes-kids-ref
                        (fn [event] (println (str "CONNECTION EVENT: " event)))
-                       (fn [data-ref dir-node] nil)
-                       (fn [data-ref dir-node] nil)
-                       (partial rt/route-created file-to-data-ref route-root client)
+                       (fn [region data-ref dir-node] nil)
+                       (fn [region data-ref dir-node] nil)
+                       (partial rt/route-created file-to-data-ref routes-root client)
                        (partial rt/route-removed file-to-data-ref)
-                       (fn [file-node data] nil)
-                       nil)
+                       (fn [& args] nil)
+                       regional-routes-ref)
         w (w/watcher client route-root
                      (fn [event] (println (str "CONNECTION EVENT: " event)))
                      (fn [data-ref dir-node] nil)
                      (fn [data-ref dir-node] nil)
-                     (partial rt/route-created file-to-data-ref route-root client)
-                     (partial rt/route-removed file-to-data-ref)
+                     (partial rt/route-created file-to-data-ref route-root client nil)
+                     (partial rt/route-removed file-to-data-ref nil)
                      (fn [file-node data] nil)
-                     nil)
+                     file-to-data-ref)
 	client-regs-ref (ref {})
 	c (w/watcher client client-reg-root
                      (fn [event] (println (str "CONNECTION EVENT: " event)))
@@ -239,6 +258,8 @@ then (1 2 1) and (1 3 1) match, again (2 1 1) would not match."
                      nil)]
     (ref {:keepers keepers
           :my-region region
+          :instances i
+          :regional-routes-ref regional-routes-ref
           :routes w
           :route-root route-root
           :routes-root routes-root

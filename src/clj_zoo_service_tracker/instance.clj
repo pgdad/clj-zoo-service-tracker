@@ -15,7 +15,7 @@
   (instance-str-value (String. data "UTF-8")))
 
 (defn instance-created
-  [instance-to-load-ref instance-root client data-ref file-node]
+  [instance-to-load-ref instance-root client region data-ref file-node]
   ;; sleep a while to make sure the server has time to update the data
   (. Thread sleep 100)
   (log/spy :debug (str "INSTANCE CREATED: " file-node))
@@ -28,7 +28,7 @@
                                    (assoc i-to-load file-node value))))))
 
 (defn instance-removed
-  [instance-to-load-ref data-ref file-node]
+  [instance-to-load-ref data-ref region file-node]
   (log/spy (str "INSTANCE removed: " file-node))
   (dosync
    (let [i-to-load (ensure instance-to-load-ref)]
@@ -36,7 +36,7 @@
             (fn [& args] (dissoc i-to-load file-node))))))
 
 (defn instance-load-changed
-  [instance-to-load-ref data-ref file-node data]
+  [instance-to-load-ref data-ref region file-node data]
   (dosync
    (let [i-to-load (ensure instance-to-load-ref)
          value (instance-value data)]
