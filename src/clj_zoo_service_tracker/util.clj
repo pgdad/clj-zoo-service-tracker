@@ -12,7 +12,10 @@
 
 (defn get-file-data
   [client file-node]
-  (String. (:data (zk/data client file-node)) "UTF-8"))
+  (let [node-data (zk/data client file-node)
+        data (if node-data (:data node-data) nil)
+        data-str (if data (String. data "UTF-8") nil)]
+      data-str))
 
 (defmacro route-root-node
   [env app region]
