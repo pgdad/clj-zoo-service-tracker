@@ -6,9 +6,11 @@
 
 (defn- instance-str-value
   [data-str]
-  (let [parts (clojure.string/split data-str util/nl-split-pattern)]
+  (if-not data-str
+    {:data-version 1 :load 0.0}
+    (let [parts (clojure.string/split data-str util/nl-split-pattern)]
     {:data-version (first parts)
-     :load (second parts)}))
+     :load (second parts)})))
 
 (defn- instance-value
   [data]
