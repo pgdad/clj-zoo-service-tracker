@@ -239,14 +239,6 @@ then (1 2 1) and (1 3 1) match, again (2 1 1) would not match."
                        (partial rt/route-removed file-to-data-ref)
                        (fn [& args] nil)
                        regional-routes-ref)
-        w (w/watcher client route-root
-                     (fn [event] (println (str "CONNECTION EVENT: " event)))
-                     (fn [data-ref dir-node] nil)
-                     (fn [data-ref dir-node] nil)
-                     (partial rt/route-created file-to-data-ref route-root client nil)
-                     (partial rt/route-removed file-to-data-ref nil)
-                     (fn [file-node data] nil)
-                     file-to-data-ref)
 	client-regs-ref (ref {})
 	c (w/watcher client client-reg-root
                      (fn [event] (println (str "CONNECTION EVENT: " event)))
@@ -260,7 +252,6 @@ then (1 2 1) and (1 3 1) match, again (2 1 1) would not match."
           :my-region region
           :instances i
           :regional-routes-ref regional-routes-ref
-          :routes w
           :route-root route-root
           :routes-root routes-root
           :routes-multi mw
