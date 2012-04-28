@@ -6,8 +6,6 @@
 
 (defn route-created
   [file-to-data-ref route-root client region perregion-routes-ref file-node]
-  ;; sleep a while to make sure the server has time to update the data
-  (. Thread sleep 100)
   (dosync
    (let [data (util/get-file-data client file-node)
          serv-def (clojure.string/replace-first file-node
