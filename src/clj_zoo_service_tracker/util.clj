@@ -1,7 +1,5 @@
 (ns clj-zoo-service-tracker.util
-  (:require [zookeeper :as zk] [clj-zoo-watcher.core :as w]
-            [clojure.reflect] [clj-tree-zipper.core :as tz] [clojure.zip :as z]
-            [clojure.tools.logging :as log])
+  (:require [zookeeper :as zk])
   (:gen-class))
 
 (def uri-split-pattern (re-pattern "/"))

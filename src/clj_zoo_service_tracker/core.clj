@@ -4,10 +4,11 @@
             [clj-zoo-watcher.multi :as mw]
             [clj-zoo-service-tracker.util :as util] 
             [clj-zoo-service-tracker.route :as rt]
+            [clj-zoo-service-tracker.trace :as trace]
             [clj-zoo-service-tracker.regionalRoutes :as regrts]
             [clj-zoo-service-tracker.instance :as inst]
             [clj-zoo-service-tracker.clientRegistration :as clireg]
-            [clojure.reflect] [clj-tree-zipper.core :as tz] [clojure.zip :as z]
+            [clojure.reflect]
             [clojure.tools.logging :as log])
   (:gen-class))
 
@@ -31,10 +32,6 @@
 (defn- major-minor-order-rev
   [file-to-data item]
   (* -1 (major-minor-order file-to-data item)))
-
-(defn- highest-major-order
-  [tree]
-  (reverse (sort-by :name (z/children tree))))
 
 (defn- minor-filter
   "major and minor are know"
@@ -162,6 +159,10 @@ then (1 2 1) and (1 3 1) match, again (2 1 1) would not match."
         (let [m (if (= -1 minor) 0 minor)]
           (lookup-services-in-regions sorted-regions tracker-ref service major m uri))))))
 
+(defmacro trace-root-node
+  [env app]
+  `(str "/" ~env "/" ~app "/trace"))
+
 (defmacro route-root-node
   [env app]
   `(str "/" ~env "/" ~app "/services"))
@@ -198,7 +199,8 @@ then (1 2 1) and (1 3 1) match, again (2 1 1) would not match."
   (let [client (zk/connect keepers)
         route-root (route-root-region-node env app region)
         client-reg-root (client-reg-root-node env app)
-        instance-root (instance-root-region-node env app region)]
+        instance-root (instance-root-region-node env app region)
+        trace-root (trace-root-node env app)]
     (log/spy :info (str "Ensuring route root node exists: " route-root))
     (zk/create-all client route-root :persistent? true)
     (log/spy :info (str "Ensuring client registration root node exists: "
@@ -206,6 +208,7 @@ then (1 2 1) and (1 3 1) match, again (2 1 1) would not match."
     (zk/create-all client client-reg-root :persistent? true)
     (log/spy :info (str "Ensuring instance root node exists: " instance-root))
     (zk/create-all client instance-root :persistent? true)
+    (zk/create-all client trace-root :persistent? true)
     (zk/close client)))
 
 (defn initialize
@@ -218,6 +221,8 @@ then (1 2 1) and (1 3 1) match, again (2 1 1) would not match."
         route-root (route-root-region-node env app region)
         client-reg-root (client-reg-root-node env app)
         instance-root (instance-root-region-node env app region)
+        trace-root (trace-root-node env app)
+        traces-ref (ref {})
 	file-to-data-ref (ref {})
 	instance-to-load-ref (ref {})
         
@@ -247,7 +252,15 @@ then (1 2 1) and (1 3 1) match, again (2 1 1) would not match."
                      (fn [data-ref file-node] nil)
                      (fn [data-ref file-node] nil)
                      (fn [data-ref file-node data] nil)
-                     nil)]
+                     nil)
+         t (w/watcher client trace-root
+                      (fn [event] (println (str "CONNECTION EVENT: " event)))
+                      (fn [data-ref dir-node] nil)
+                      (fn [data-ref dir-node] nil)
+                      (partial trace/created traces-ref)
+                      (partial trace/removed traces-ref)
+                      (fn [& args] nil)
+                      nil)]
     (ref {:keepers keepers
           :my-region region
           :instances i
@@ -258,5 +271,6 @@ then (1 2 1) and (1 3 1) match, again (2 1 1) would not match."
           :client-reg-root client-reg-root
           :client-regs c
           :client-regs-ref client-regs-ref
-          :file-to-data-ref file-to-data-ref})))
+          :file-to-data-ref file-to-data-ref
+          :traces-ref traces-ref})))
 
