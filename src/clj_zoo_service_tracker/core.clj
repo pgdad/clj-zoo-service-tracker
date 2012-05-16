@@ -159,30 +159,21 @@ then (1 2 1) and (1 3 1) match, again (2 1 1) would not match."
         (let [m (if (= -1 minor) 0 minor)]
           (lookup-services-in-regions sorted-regions tracker-ref service major m uri))))))
 
-(defmacro trace-root-node
-  [env app]
-  `(str "/" ~env "/" ~app "/trace"))
+(def trace-root-node "/trace")
 
-(defmacro route-root-node
-  [env app]
-  `(str "/" ~env "/" ~app "/services"))
+(def route-root-node "/services")
 
 (defmacro route-root-region-node
-  [env app region]
-  `(str (route-root-node ~env ~app) "/" ~region))
+  [region]
+  `(str route-root-node "/" ~region))
 
-(defmacro client-reg-root-node
-  [env app]
-  `(str "/" ~env "/" ~app "/clientregistrations"))
+(def client-reg-root-node "/clientregistrations")
 
-
-(defmacro instance-root-node
-  [env app]
-  `(str "/" ~env "/" ~app "/servers"))
+(def instance-root-node "/servers")
 
 (defmacro instance-root-region-node
-  [env app region]
-  `(str (instance-root-node ~env ~app) "/" ~region))
+  [region]
+  `(str instance-root-node "/" ~region))
 
 (defn- ensure-root-exists
   [keepers]
@@ -194,34 +185,30 @@ then (1 2 1) and (1 3 1) match, again (2 1 1) would not match."
           (zk/create-all client (str "/" chroot-part) :persistent? true)))))
 
 (defn- ensure-nodes-exist
-  [keepers env app region]
+  [keepers region]
   (ensure-root-exists keepers)
   (let [client (zk/connect keepers)
-        route-root (route-root-region-node env app region)
-        client-reg-root (client-reg-root-node env app)
-        instance-root (instance-root-region-node env app region)
-        trace-root (trace-root-node env app)]
+        route-root (route-root-region-node region)
+        instance-root (instance-root-region-node region)]
     (log/spy :info (str "Ensuring route root node exists: " route-root))
     (zk/create-all client route-root :persistent? true)
     (log/spy :info (str "Ensuring client registration root node exists: "
-	client-reg-root))
-    (zk/create-all client client-reg-root :persistent? true)
+	client-reg-root-node))
+    (zk/create-all client client-reg-root-node :persistent? true)
     (log/spy :info (str "Ensuring instance root node exists: " instance-root))
     (zk/create-all client instance-root :persistent? true)
-    (zk/create-all client trace-root :persistent? true)
+    (zk/create-all client trace-root-node :persistent? true)
     (zk/close client)))
 
 (defn initialize
-  [keepers env app region]
-  (ensure-nodes-exist keepers env app region)
+  [keepers region]
+  (ensure-nodes-exist keepers region)
   (let [client (zk/connect keepers)
         regional-routes-ref (regrts/new)
-        routes-root (route-root-node env app)
+        routes-root route-root-node
         routes-kids-ref (ref {})
-        route-root (route-root-region-node env app region)
-        client-reg-root (client-reg-root-node env app)
-        instance-root (instance-root-region-node env app region)
-        trace-root (trace-root-node env app)
+        route-root (route-root-region-node region)
+        instance-root (instance-root-region-node region)
         traces-ref (ref {})
 	file-to-data-ref (ref {})
 	instance-to-load-ref (ref {})
@@ -245,15 +232,15 @@ then (1 2 1) and (1 3 1) match, again (2 1 1) would not match."
                        (fn [& args] nil)
                        regional-routes-ref)
 	client-regs-ref (ref {})
-	c (w/watcher client client-reg-root
+	c (w/watcher client client-reg-root-node
                      (fn [event] (println (str "CONNECTION EVENT: " event)))
-                     (partial clireg/client-registration-created client-regs-ref client-reg-root client)
-                     (partial clireg/client-registration-removed  client-regs-ref client-reg-root client)
+                     (partial clireg/client-registration-created client-regs-ref client-reg-root-node client)
+                     (partial clireg/client-registration-removed  client-regs-ref client-reg-root-node client)
                      (fn [data-ref file-node] nil)
                      (fn [data-ref file-node] nil)
                      (fn [data-ref file-node data] nil)
                      nil)
-         t (w/watcher client trace-root
+         t (w/watcher client trace-root-node
                       (fn [event] (println (str "CONNECTION EVENT: " event)))
                       (fn [data-ref dir-node] nil)
                       (fn [data-ref dir-node] nil)
@@ -268,7 +255,7 @@ then (1 2 1) and (1 3 1) match, again (2 1 1) would not match."
           :route-root route-root
           :routes-root routes-root
           :routes-multi mw
-          :client-reg-root client-reg-root
+          :client-reg-root client-reg-root-node
           :client-regs c
           :client-regs-ref client-regs-ref
           :file-to-data-ref file-to-data-ref
