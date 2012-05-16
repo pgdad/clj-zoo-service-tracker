@@ -14,15 +14,3 @@
         data (if node-data (:data node-data) nil)
         data-str (if data (String. data "UTF-8") nil)]
       data-str))
-
-(defmacro route-root-node
-  [env app region]
-  `(str "/" ~env "/" ~app "/services/" ~region))
-
-(defmacro client-reg-root-node
-  [env app]
-  `(str "/" ~env "/" ~app "/clientregistrations"))
-
-(defmacro instance-root-node
-  [env app region]
-  `(str "/" ~env "/" ~app "/servers/" ~region))

@@ -1,4 +1,4 @@
-(defproject clj-zoo-service-tracker "1.0.4"
+(defproject clj-zoo-service-tracker "1.0.5"
   :description "FIXME: write description"
   :aot [clj-zoo-service-tracker.util
         clj-zoo-service-tracker.instance
