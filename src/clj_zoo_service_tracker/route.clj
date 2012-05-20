@@ -19,8 +19,8 @@
                 :data-version (first data-parts)
                 :instance-node (second data-parts)
                 :url (nth data-parts 2)}
-         f-to-data (ensure file-to-data-ref)
-         r-f-to-data (ensure perregion-routes-ref)]
+         f-to-data @file-to-data-ref
+         r-f-to-data @perregion-routes-ref]
      
      (regrts/add-route perregion-routes-ref region file-node value)
      (alter file-to-data-ref (fn [& args]
@@ -29,8 +29,8 @@
 (defn route-removed
   [file-to-data-ref region perregion-routes-ref file-node]
   (dosync
-   (let [f-to-data (ensure file-to-data-ref)
-         r-f-to-data (ensure perregion-routes-ref)]
+   (let [f-to-data @file-to-data-ref
+         r-f-to-data @perregion-routes-ref]
      (regrts/remove-route perregion-routes-ref region file-node)
      (alter file-to-data-ref
             (fn [& args] (dissoc f-to-data file-node))))))

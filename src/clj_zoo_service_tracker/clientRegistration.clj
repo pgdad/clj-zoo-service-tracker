@@ -6,7 +6,7 @@
 (defn client-registration-created
   [client-regs-ref client-reg-root client data-ref dir-node]
   (dosync
-   (let [registrations (ensure client-regs-ref)
+   (let [registrations @client-regs-ref
          reg-def (clojure.string/replace-first dir-node
                                                (str client-reg-root "/") "")
          reg-parts (clojure.string/split reg-def util/uri-split-pattern)
@@ -27,7 +27,7 @@
   [client-regs-ref client-reg-root client data-ref dir-node]
   (log/spy :debug (str "CLIENT REGISTRATION REMOVED: " dir-node))
   (dosync
-   (let [registrations (ensure client-regs-ref)
+   (let [registrations @client-regs-ref
          reg-def (clojure.string/replace-first dir-node
                                                (str client-reg-root "/") "")
          reg-parts (clojure.string/split reg-def util/uri-split-pattern)

@@ -51,7 +51,7 @@
   [tracker-ref region service]
   (dosync
    (let [regional-routes-ref (:regional-routes-ref @tracker-ref)
-         regional-f-to-data ((ensure regional-routes-ref) region) 
+         regional-f-to-data (@regional-routes-ref region) 
          regional-nodes (keys regional-f-to-data)
          regional-for-service (filter (fn [item]
                                         (= service
@@ -84,7 +84,7 @@ then (1 2 1) and (1 3 1) match, again (2 1 1) would not match."
   (log/spy :debug (str "LOOKUP SERVICES: " (list service major minor)))
   (dosync
    (let [regional-routes-ref (:regional-routes-ref @tracker-ref)
-         regional-f-to-data ((ensure regional-routes-ref) region) 
+         regional-f-to-data (@regional-routes-ref region) 
          regional-nodes (keys regional-f-to-data)
          regional-for-service (filter (fn [item]
                                         (and (= service

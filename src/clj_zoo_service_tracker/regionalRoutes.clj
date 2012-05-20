@@ -17,14 +17,14 @@
   [reg-routes-ref region file-node value]
   (ensure-region-added reg-routes-ref region)
   (dosync
-   (let [reg-routes (ensure reg-routes-ref)
+   (let [reg-routes @reg-routes-ref
         regional (reg-routes region)]
      (alter reg-routes-ref assoc region (assoc regional file-node value)))))
 
 (defn remove-route
   [reg-routes-ref region file-node]
   (dosync
-   (let [reg-routes (ensure reg-routes-ref)
+   (let [reg-routes @reg-routes-ref
          regional (reg-routes region)]
      (alter reg-routes-ref assoc region (dissoc regional file-node)))))
 

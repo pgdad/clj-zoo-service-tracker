@@ -21,7 +21,7 @@
   (log/spy :debug (str "INSTANCE CREATED: " file-node))
   (dosync
    (let [data-str (util/get-file-data client file-node)
-         i-to-load (ensure instance-to-load-ref)
+         i-to-load @instance-to-load-ref
          value (instance-str-value data-str)]
      (alter instance-to-load-ref (fn [& args]
                                    (assoc i-to-load file-node value))))))
@@ -30,14 +30,14 @@
   [instance-to-load-ref data-ref region file-node]
   (log/spy (str "INSTANCE removed: " file-node))
   (dosync
-   (let [i-to-load (ensure instance-to-load-ref)]
+   (let [i-to-load @instance-to-load-ref]
      (alter instance-to-load-ref
             (fn [& args] (dissoc i-to-load file-node))))))
 
 (defn instance-load-changed
   [instance-to-load-ref data-ref region file-node data]
   (dosync
-   (let [i-to-load (ensure instance-to-load-ref)
+   (let [i-to-load @instance-to-load-ref
          value (instance-value data)]
      (alter instance-to-load-ref
             (fn [& args] (assoc i-to-load file-node value))))))

@@ -7,7 +7,7 @@
   [traces-ref _ file-node]
   (log/spy :debug (str "TRACE CREATED: " file-node))
   (dosync
-   (let [traces (ensure traces-ref)
+   (let [traces @traces-ref
          trace-parts (clojure.string/split file-node util/uri-split-pattern)
          address (last trace-parts)]
      (alter traces-ref assoc address true))))
@@ -16,7 +16,7 @@
   [traces-ref _ file-node]
   (log/spy :debug (str "TRACE REMOVED: " file-node))
   (dosync
-   (let [traces (ensure traces-ref)
+   (let [traces @traces-ref
          trace-parts (clojure.string/split file-node util/uri-split-pattern)
          address (last trace-parts)]
      (alter traces-ref dissoc address))))
