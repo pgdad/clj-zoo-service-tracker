@@ -104,13 +104,13 @@ then (1 2 1) and (1 3 1) match, again (2 1 1) would not match."
 
 ;; function to be used to filter out regions based on client id
 (defn- filter-lookup-regions
-  [client-id region]
+  [client-id ^String region]
   (or (.endsWith region (str "-" client-id))
       (= -1 (.indexOf region "-"))))
 
 (defn- sort-lookup-regions
   [my-region regions client-id]
-  (sort-by (fn [item]
+  (sort-by (fn [^String item]
              (if (= item (str my-region "-" client-id))
                -2
                (if (.endsWith item (str "-" client-id))
@@ -161,6 +161,8 @@ then (1 2 1) and (1 3 1) match, again (2 1 1) would not match."
 
 (def trace-root-node "/trace")
 
+(def create-passive-base "/createpassive")
+
 (def route-root-node "/services")
 
 (defmacro route-root-region-node
@@ -190,13 +192,10 @@ then (1 2 1) and (1 3 1) match, again (2 1 1) would not match."
   (let [client (zk/connect keepers)
         route-root (route-root-region-node region)
         instance-root (instance-root-region-node region)]
-    (log/spy :info (str "Ensuring route root node exists: " route-root))
     (zk/create-all client route-root :persistent? true)
-    (log/spy :info (str "Ensuring client registration root node exists: "
-	client-reg-root-node))
     (zk/create-all client client-reg-root-node :persistent? true)
-    (log/spy :info (str "Ensuring instance root node exists: " instance-root))
     (zk/create-all client instance-root :persistent? true)
+    (zk/create-all client create-passive-base :persistent? true)
     (zk/create-all client trace-root-node :persistent? true)
     (zk/close client)))
 
