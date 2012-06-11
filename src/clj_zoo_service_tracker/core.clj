@@ -208,7 +208,6 @@ then (1 2 1) and (1 3 1) match, again (2 1 1) would not match."
         routes-kids-ref (ref {})
         route-root (route-root-region-node region)
         instance-root (instance-root-region-node region)
-        traces-ref (ref {})
 	file-to-data-ref (ref {})
 	instance-to-load-ref (ref {})
         
@@ -238,15 +237,7 @@ then (1 2 1) and (1 3 1) match, again (2 1 1) would not match."
                      (fn [data-ref file-node] nil)
                      (fn [data-ref file-node] nil)
                      (fn [data-ref file-node data] nil)
-                     nil)
-         t (w/watcher client trace-root-node
-                      (fn [event] (println (str "CONNECTION EVENT: " event)))
-                      (fn [data-ref dir-node] nil)
-                      (fn [data-ref dir-node] nil)
-                      (partial trace/created traces-ref)
-                      (partial trace/removed traces-ref)
-                      (fn [& args] nil)
-                      nil)]
+                     nil)]
     (ref {:keepers keepers
           :my-region region
           :instances i
@@ -257,6 +248,5 @@ then (1 2 1) and (1 3 1) match, again (2 1 1) would not match."
           :client-reg-root client-reg-root-node
           :client-regs c
           :client-regs-ref client-regs-ref
-          :file-to-data-ref file-to-data-ref
-          :traces-ref traces-ref})))
+          :file-to-data-ref file-to-data-ref})))
 
