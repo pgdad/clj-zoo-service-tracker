@@ -1,7 +1,9 @@
 (ns clj-zoo-service-tracker.core
   (:require [zookeeper :as zk]
+            [clj-zoo.session :as session]
             [clj-zoo-watcher.core :as w]
             [clj-zoo-watcher.multi :as mw]
+            [clj-zoo-watcher.mapper :as mapperc]
             [clj-zoo-service-tracker.util :as util] 
             [clj-zoo-service-tracker.route :as rt]
             [clj-zoo-service-tracker.trace :as trace]
@@ -177,32 +179,41 @@ then (1 2 1) and (1 3 1) match, again (2 1 1) would not match."
   [region]
   `(str instance-root-node "/" ~region))
 
+(defn- create-non-existing-node
+  [fWork node]
+  (if-not (-> fWork .checkExists (.forPath node))
+    (-> fWork .create .creatingParentsIfNeeded (.forPath node))))
+
 (defn- ensure-root-exists
   [keepers]
   (let [keepers-parts (clojure.string/split keepers #"/")
         host-part (first keepers-parts)
         chroot-part (second keepers-parts)]
     (if chroot-part
-       (let [client (zk/connect host-part)]
-          (zk/create-all client (str "/" chroot-part) :persistent? true)))))
+      (let [z-session (session/login host-part)
+            fWork (:fWork @z-session)]
+        (create-non-existing-node fWork (str "/" chroot-part))
+        (session/logout z-session)))))
 
 (defn- ensure-nodes-exist
   [keepers region]
   (ensure-root-exists keepers)
-  (let [client (zk/connect keepers)
+  (let [z-session (session/login keepers)
+        fWork (:fWork @z-session)
         route-root (route-root-region-node region)
         instance-root (instance-root-region-node region)]
-    (zk/create-all client route-root :persistent? true)
-    (zk/create-all client client-reg-root-node :persistent? true)
-    (zk/create-all client instance-root :persistent? true)
-    (zk/create-all client create-passive-base :persistent? true)
-    (zk/create-all client trace-root-node :persistent? true)
-    (zk/close client)))
+    (doseq [node (list route-root client-reg-root-node instance-root create-passive-base trace-root-node)]
+      (create-non-existing-node fWork node))
+    (session/logout z-session)))
 
 (defn initialize
   [keepers region]
   (ensure-nodes-exist keepers region)
-  (let [client (zk/connect keepers)
+  (let [z-session (session/login keepers)
+        client (zk/connect keepers)
+        fWork (:fWork @z-session)
+        _ (println (str "FWORK: " fWork " " (.isStarted fWork)))
+        _ (println (str "CLIENT: " client))
         regional-routes-ref (regrts/new)
         routes-root route-root-node
         routes-kids-ref (ref {})
@@ -210,7 +221,7 @@ then (1 2 1) and (1 3 1) match, again (2 1 1) would not match."
         instance-root (instance-root-region-node region)
 	file-to-data-ref (ref {})
 	instance-to-load-ref (ref {})
-        
+
 	i (w/watcher client instance-root
                      (fn [event]
                        (println (str "CONNECTION EVENT: " event)))
@@ -220,6 +231,7 @@ then (1 2 1) and (1 3 1) match, again (2 1 1) would not match."
                      (partial inst/instance-removed instance-to-load-ref nil)
                      (partial inst/instance-load-changed instance-to-load-ref nil)
                      nil)
+
         mw (mw/child-watchers client routes-root
                        routes-kids-ref
                        (fn [event] (println (str "CONNECTION EVENT: " event)))
@@ -230,6 +242,11 @@ then (1 2 1) and (1 3 1) match, again (2 1 1) would not match."
                        (fn [& args] nil)
                        regional-routes-ref)
 	client-regs-ref (ref {})
+        client-regs-curator-ref (ref {})
+        client-regs-curator-cache-ref (ref {})
+        _ (println (str "*(*(*(*(*(*(*"))
+        client-reg-cache (mapperc/mapper-cache fWork client-regs-curator-ref nil client-reg-root-node)
+        _ (println (str "()()()()()()() CLIENT REG CACHE ()()()()"))
 	c (w/watcher client client-reg-root-node
                      (fn [event] (println (str "CONNECTION EVENT: " event)))
                      (partial clireg/client-registration-created client-regs-ref client-reg-root-node client)
@@ -239,6 +256,7 @@ then (1 2 1) and (1 3 1) match, again (2 1 1) would not match."
                      (fn [data-ref file-node data] nil)
                      nil)]
     (ref {:keepers keepers
+          :fWork fWork
           :my-region region
           :instances i
           :regional-routes-ref regional-routes-ref
@@ -246,7 +264,13 @@ then (1 2 1) and (1 3 1) match, again (2 1 1) would not match."
           :routes-root routes-root
           :routes-multi mw
           :client-reg-root client-reg-root-node
+          :client-reg-cache client-reg-cache
           :client-regs c
           :client-regs-ref client-regs-ref
           :file-to-data-ref file-to-data-ref})))
 
+(defn close
+  [session]
+  (let [cli-reg-cache (:client-reg-cache @session)]
+    (mapperc/close cli-reg-cache)
+    (session/logout session)))

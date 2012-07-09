@@ -1,6 +1,7 @@
 (ns clj-zoo-service-tracker.clientRegistration
   (:require [clojure.tools.logging :as log]
-            [clj-zoo-service-tracker.util :as util])
+            [clj-zoo-service-tracker.util :as util]
+            [clojure.set])
   (:gen-class))
 
 (defn client-registration-created
