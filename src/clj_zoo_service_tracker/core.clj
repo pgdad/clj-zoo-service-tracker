@@ -8,7 +8,6 @@
             [clj-zoo-service-tracker.route :as rt]
             [clj-zoo-service-tracker.trace :as trace]
             [clj-zoo-service-tracker.regionalRoutes :as regrts]
-            [clj-zoo-service-tracker.instance :as inst]
             [clojure.reflect]
             [clojure.tools.logging :as log])
   (:gen-class))
