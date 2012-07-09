@@ -17,12 +17,9 @@
   "given service-ref, instance-cache-ref and service instance,
 fetch server instance load"
  [service-ref load-ref item]
- (println (str "GET LOAD0: " item))
  (let [instance (get-in @service-ref [item :instance-node])
-       _ (println (str "-LU1: " (get-in @load-ref [:m instance])))
        l (get-in @load-ref [:m instance :data :load])
        res (if l l 0)]
-   (println (str "--=" res))
    res))
 
 (defn- major-minor-order-o
@@ -107,9 +104,6 @@ then (1 2 1) and (1 3 1) match, again (2 1 1) would not match."
      (log/spy :debug (str "LOOKUP SERVICES for-service: " regional-for-service))
      (if (and regional-for-service (not (= regional-for-service '())))
        (do
-         (println (str "REGIONAL FOR SERVICE: " (reverse regional-for-service)))
-         (println (str "INSTANCE CACHE REF: " @(:instance-cache-ref @tracker-ref)))
-         (println (str "FILE TO DATA REF: " @(:file-to-data-ref @tracker-ref)))
          (first (sort-by (partial get-load
                                   (:file-to-data-ref @tracker-ref)
                                   (:instance-cache-ref @tracker-ref))
@@ -239,8 +233,6 @@ then (1 2 1) and (1 3 1) match, again (2 1 1) would not match."
   (let [z-session (session/login keepers)
         client (zk/connect keepers)
         fWork (:fWork @z-session)
-        _ (println (str "FWORK: " fWork " " (.isStarted fWork)))
-        _ (println (str "CLIENT: " client))
         regional-routes-ref (regrts/new)
         routes-root route-root-node
         routes-kids-ref (ref {})
