@@ -8,7 +8,7 @@
   ;;       clj-zoo-service-tracker.clientRegistration
   ;;       clj-zoo-service-tracker.core]
   :plugins [[lein-swank "1.4.4"]]
-  :dependencies [[org.clojure/clojure "1.3.0"]
+  :dependencies [[org.clojure/clojure "1.4.0"]
    [clj-zoo "1.0.11"]
    [clj-zoo-watcher "1.0.10"]
    [log4j/log4j "1.2.16"]

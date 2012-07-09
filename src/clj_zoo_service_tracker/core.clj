@@ -9,31 +9,38 @@
             [clj-zoo-service-tracker.trace :as trace]
             [clj-zoo-service-tracker.regionalRoutes :as regrts]
             [clj-zoo-service-tracker.instance :as inst]
-            [clj-zoo-service-tracker.clientRegistration :as clireg]
             [clojure.reflect]
             [clojure.tools.logging :as log])
   (:gen-class))
 
 (defn- get-load
-  "given a service instance, fetch server instance load"
-  [item]
-  (let [instance (:instance-node item)
-	l (if instance
-            (if (:load instance) (:load instance)
-                0)
-            0)]
-    l))
+  "given service-ref, instance-cache-ref and service instance,
+fetch server instance load"
+ [service-ref load-ref item]
+ (println (str "GET LOAD0: " item))
+ (let [instance (get-in @service-ref [item :instance-node])
+       _ (println (str "-LU1: " (get-in @load-ref [:m instance])))
+       l (get-in @load-ref [:m instance :data :load])
+       res (if l l 0)]
+   (println (str "--=" res))
+   res))
+
+(defn- major-minor-order-o
+  [instance-cache-ref item]
+  (let [current-load (get-in @instance-cache-ref [:m item :data :load])
+        l (if current-load current-load 0.0)]
+    ))
 
 (defn- major-minor-order
-  [file-to-data item]
-  (let [serv-data (file-to-data item)
-	current-load (get-load item)
+  [service-ref load-ref item]
+  (let [serv-data (service-ref item)
+	current-load (get-load service-ref load-ref item)
 	res (+ (* 10000 (:major serv-data)) (* 100 (:minor serv-data)))]
     res))
 
 (defn- major-minor-order-rev
-  [file-to-data item]
-  (* -1 (major-minor-order file-to-data item)))
+  [service-ref load-ref item]
+  (* -1 (major-minor-order service-ref load-ref item)))
 
 (defn- minor-filter
   "major and minor are know"
@@ -59,8 +66,11 @@
                                         (= service
                                            (:service (regional-value-of tracker-ref region item))))
                                       regional-nodes)
-         regional-high-order (sort-by (partial major-minor-order-rev regional-f-to-data)
-                                      regional-for-service)]
+         regional-high-order (sort-by
+                              (partial major-minor-order-rev
+                                       (:file-to-data-ref @tracker-ref)
+                                       (:instance-cache-ref @tracker-ref))
+                              regional-for-service)]
      (if (and regional-high-order (not (= regional-high-order '())))
        (first regional-high-order)
        nil))))
@@ -96,7 +106,15 @@ then (1 2 1) and (1 3 1) match, again (2 1 1) would not match."
                                       regional-nodes)]
      (log/spy :debug (str "LOOKUP SERVICES for-service: " regional-for-service))
      (if (and regional-for-service (not (= regional-for-service '())))
-       (first (sort-by get-load regional-for-service))
+       (do
+         (println (str "REGIONAL FOR SERVICE: " (reverse regional-for-service)))
+         (println (str "INSTANCE CACHE REF: " @(:instance-cache-ref @tracker-ref)))
+         (println (str "FILE TO DATA REF: " @(:file-to-data-ref @tracker-ref)))
+         (first (sort-by (partial get-load
+                                  (:file-to-data-ref @tracker-ref)
+                                  (:instance-cache-ref @tracker-ref))
+                         regional-for-service)))
+       
        nil))))
 
 (defn- regional-url-of
@@ -206,6 +224,15 @@ then (1 2 1) and (1 3 1) match, again (2 1 1) would not match."
       (create-non-existing-node fWork node))
     (session/logout z-session)))
 
+(defn- instance-data-f
+  [data]
+  (let [data-str (String. data "UTF-8")]
+    (if-not data-str
+      {:data-version 1 :load 0.0}
+      (let [parts (clojure.string/split data-str util/nl-split-pattern)]
+        {:data-version (first parts)
+         :load (read-string (second parts))}))))
+
 (defn initialize
   [keepers region]
   (ensure-nodes-exist keepers region)
@@ -222,6 +249,10 @@ then (1 2 1) and (1 3 1) match, again (2 1 1) would not match."
 	file-to-data-ref (ref {})
 	instance-to-load-ref (ref {})
 
+        instance-cache-ref (ref {})
+        instance-cache (mapperc/mapper-cache fWork instance-cache-ref
+                                             instance-data-f
+                                             instance-root)
 	i (w/watcher client instance-root
                      (fn [event]
                        (println (str "CONNECTION EVENT: " event)))
@@ -241,36 +272,28 @@ then (1 2 1) and (1 3 1) match, again (2 1 1) would not match."
                        (partial rt/route-removed file-to-data-ref)
                        (fn [& args] nil)
                        regional-routes-ref)
-	client-regs-ref (ref {})
         client-regs-curator-ref (ref {})
-        client-regs-curator-cache-ref (ref {})
-        _ (println (str "*(*(*(*(*(*(*"))
-        client-reg-cache (mapperc/mapper-cache fWork client-regs-curator-ref nil client-reg-root-node)
-        _ (println (str "()()()()()()() CLIENT REG CACHE ()()()()"))
-	c (w/watcher client client-reg-root-node
-                     (fn [event] (println (str "CONNECTION EVENT: " event)))
-                     (partial clireg/client-registration-created client-regs-ref client-reg-root-node client)
-                     (partial clireg/client-registration-removed  client-regs-ref client-reg-root-node client)
-                     (fn [data-ref file-node] nil)
-                     (fn [data-ref file-node] nil)
-                     (fn [data-ref file-node data] nil)
-                     nil)]
+        client-reg-cache (mapperc/mapper-cache fWork client-regs-curator-ref nil client-reg-root-node)]
+
     (ref {:keepers keepers
           :fWork fWork
           :my-region region
           :instances i
+          :instance-cache instance-cache
+          :instance-cache-ref instance-cache-ref
           :regional-routes-ref regional-routes-ref
           :route-root route-root
           :routes-root routes-root
           :routes-multi mw
           :client-reg-root client-reg-root-node
           :client-reg-cache client-reg-cache
-          :client-regs c
-          :client-regs-ref client-regs-ref
+          :client-regs-curator-ref client-regs-curator-ref
           :file-to-data-ref file-to-data-ref})))
 
 (defn close
   [session]
-  (let [cli-reg-cache (:client-reg-cache @session)]
+  (let [cli-reg-cache (:client-reg-cache @session)
+        instance-cache (:instance-cache @session)]
     (mapperc/close cli-reg-cache)
+    (mapperc/close instance-cache)
     (session/logout session)))
