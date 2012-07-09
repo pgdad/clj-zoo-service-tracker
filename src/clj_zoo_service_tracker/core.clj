@@ -245,15 +245,6 @@ then (1 2 1) and (1 3 1) match, again (2 1 1) would not match."
         instance-cache (mapperc/mapper-cache fWork instance-cache-ref
                                              instance-data-f
                                              instance-root)
-	i (w/watcher client instance-root
-                     (fn [event]
-                       (println (str "CONNECTION EVENT: " event)))
-                     (fn [data-ref dir-node] nil)
-                     (fn [data-ref dir-node] nil)
-                     (partial inst/instance-created instance-to-load-ref instance-root client nil)
-                     (partial inst/instance-removed instance-to-load-ref nil)
-                     (partial inst/instance-load-changed instance-to-load-ref nil)
-                     nil)
 
         mw (mw/child-watchers client routes-root
                        routes-kids-ref
@@ -270,7 +261,6 @@ then (1 2 1) and (1 3 1) match, again (2 1 1) would not match."
     (ref {:keepers keepers
           :fWork fWork
           :my-region region
-          :instances i
           :instance-cache instance-cache
           :instance-cache-ref instance-cache-ref
           :regional-routes-ref regional-routes-ref
