@@ -3,10 +3,10 @@
             [clj-zoo.session :as session]
             [clj-zoo-watcher.core :as w]
             [clj-zoo-watcher.multi :as mw]
+            [clj-zoo-watcher.cache :as c]
             [clj-zoo-watcher.mapper :as mapperc]
             [clj-zoo-service-tracker.util :as util] 
             [clj-zoo-service-tracker.route :as rt]
-            [clj-zoo-service-tracker.trace :as trace]
             [clj-zoo-service-tracker.regionalRoutes :as regrts]
             [clojure.reflect]
             [clojure.tools.logging :as log])
@@ -172,8 +172,6 @@ then (1 2 1) and (1 3 1) match, again (2 1 1) would not match."
         (let [m (if (= -1 minor) 0 minor)]
           (lookup-services-in-regions sorted-regions tracker-ref service major m uri))))))
 
-(def trace-root-node "/trace")
-
 (def create-passive-base "/createpassive")
 
 (def route-root-node "/services")
@@ -213,7 +211,7 @@ then (1 2 1) and (1 3 1) match, again (2 1 1) would not match."
         fWork (:fWork @z-session)
         route-root (route-root-region-node region)
         instance-root (instance-root-region-node region)]
-    (doseq [node (list route-root client-reg-root-node instance-root create-passive-base trace-root-node)]
+    (doseq [node (list route-root client-reg-root-node instance-root create-passive-base)]
       (create-non-existing-node fWork node))
     (session/logout z-session)))
 
