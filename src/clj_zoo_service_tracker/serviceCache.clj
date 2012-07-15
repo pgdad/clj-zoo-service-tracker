@@ -2,7 +2,8 @@
   (:require [clj-zoo-service-tracker.util :as util]
             [clojure.tools.logging :as log]
             [clj-zoo.serverSession :as s])
-  (:import (java.util.Map))
+  (:import (java.util Map)
+           (com.netflix.curator.x.discovery.details ServiceCacheListener))
   (:gen-class))
 
 (defn- ->keyword
@@ -20,21 +21,54 @@
   [service]
   (->clj (.getPayload service)))
 
-(defn cache
-  [fWork active? region name]
-  (let [discovery (if active?
-                    (s/activated-discovery fWork region)
-                    (s/passivated-discovery fWork region))]
-    (atom {:discovery discovery :name name})))
+(defn- listener
+  [f]
+  (proxy [com.netflix.curator.x.discovery.details.ServiceCacheListener] []
+    (cacheChanged [] (f))))
+
+(defn- instance->keys
+  [instance]
+  (let [pay-map (service->payload-map instance)
+        major (read-string (:major pay-map))
+        minor (read-string (:minor pay-map))
+        id (.getId instance)]
+    [major minor id]))
+
+(defn- instances->map
+  [instances]
+  (reduce (fn [m inst]
+            (let [[major minor id] (instance->keys inst)]
+              (println (str "GOT ID: " id))
+              (update-in m [major minor] assoc id inst)))
+          {} instances))
+
+(defn close
+  [cache]
+  (.close (:cache @cache)))
 
 (defn instances
   [cache]
-  (-> (:discovery @cache) (.queryForInstances (:name @cache))))
-
-(defn instance
-  [cache id]
-  (-> (:discovery @cache) (.queryForInstance (:name @cache) id)))
+  (-> (:cache @cache) (.getInstances)))
 
 (defn payloads
   [cache]
   (map service->payload-map (instances cache)))
+
+(defn cache
+  [fWork path services-ref caches-ref]
+  (println (str "SERVICES CACHE FOR: " path))
+  (let [s-parts (clojure.string/split path #"/")
+        name (last s-parts)
+        region (nth s-parts 2)
+        discovery (s/sd-builder fWork path)
+        c (-> discovery .serviceCacheBuilder (.name name) .build)
+        _ (.start c)
+        l (listener (fn [& args]
+                      (dosync
+                       (alter services-ref assoc-in [region name]
+                              (-> c .getInstances instances->map)))))]
+    (dosync
+     (alter caches-ref assoc path c))
+    (.addListener c l)
+    (.cacheChanged l)
+    (atom {:discovery discovery :cache c :name name :listner l})))

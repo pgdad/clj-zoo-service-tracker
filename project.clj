@@ -13,7 +13,8 @@
    [clj-zoo-watcher "1.0.10"]
    [log4j/log4j "1.2.16"]
    [org.clojure/tools.logging "0.2.3"]
-   [com.netflix.curator/curator-recipes "1.1.13"]]
+   [com.netflix.curator/curator-recipes "1.1.13"]
+   [com.netflix.curator/curator-x-discovery "1.1.13"]]
   :warn-on-reflection true
   :jar-exclusions [#"project.clj"]
   ;:omit-source true
