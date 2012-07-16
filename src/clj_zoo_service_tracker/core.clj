@@ -5,6 +5,7 @@
             [clj-zoo-watcher.multi :as mw]
             [clj-zoo-watcher.cache :as c]
             [clj-zoo-watcher.mapper :as mapperc]
+            [clj-zoo-service-tracker.regionCache :as rc]
             [clj-zoo-service-tracker.util :as util] 
             [clj-zoo-service-tracker.route :as rt]
             [clj-zoo-service-tracker.regionalRoutes :as regrts]
@@ -228,30 +229,18 @@ then (1 2 1) and (1 3 1) match, again (2 1 1) would not match."
   [keepers region]
   (ensure-nodes-exist keepers region)
   (let [z-session (session/login keepers)
-        client (zk/connect keepers)
         fWork (:fWork @z-session)
-        regional-routes-ref (regrts/new)
-        routes-root route-root-node
-        routes-kids-ref (ref {})
-        route-root (route-root-region-node region)
+        services-ref (ref {})
+        caches-ref (ref {})
         instance-root (instance-root-region-node region)
-	file-to-data-ref (ref {})
-	instance-to-load-ref (ref {})
 
         instance-cache-ref (ref {})
         instance-cache (mapperc/mapper-cache fWork instance-cache-ref
                                              instance-data-f
                                              instance-root)
 
-        mw (mw/child-watchers client routes-root
-                       routes-kids-ref
-                       (fn [event] (println (str "CONNECTION EVENT: " event)))
-                       (fn [region data-ref dir-node] nil)
-                       (fn [region data-ref dir-node] nil)
-                       (partial rt/route-created file-to-data-ref routes-root client)
-                       (partial rt/route-removed file-to-data-ref)
-                       (fn [& args] nil)
-                       regional-routes-ref)
+        services-cache (rc/cache fWork "/services" services-ref caches-ref)
+
         client-regs-curator-ref (ref {})
         client-reg-cache (mapperc/mapper-cache fWork client-regs-curator-ref nil client-reg-root-node)]
 
@@ -260,14 +249,11 @@ then (1 2 1) and (1 3 1) match, again (2 1 1) would not match."
           :my-region region
           :instance-cache instance-cache
           :instance-cache-ref instance-cache-ref
-          :regional-routes-ref regional-routes-ref
-          :route-root route-root
-          :routes-root routes-root
-          :routes-multi mw
-          :client-reg-root client-reg-root-node
+          :services-cache services-cache
+          :services-ref services-ref
+          :caches-ref caches-ref
           :client-reg-cache client-reg-cache
-          :client-regs-curator-ref client-regs-curator-ref
-          :file-to-data-ref file-to-data-ref})))
+          :client-regs-curator-ref client-regs-curator-ref})))
 
 (defn close
   [session]
