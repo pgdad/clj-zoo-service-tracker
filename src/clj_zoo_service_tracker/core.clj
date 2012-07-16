@@ -6,12 +6,14 @@
             [clj-zoo-watcher.cache :as c]
             [clj-zoo-watcher.mapper :as mapperc]
             [clj-zoo-service-tracker.regionCache :as rc]
+            [clj-zoo-service-tracker.serviceCache :as sc]
             [clj-zoo-service-tracker.util :as util] 
-            [clj-zoo-service-tracker.route :as rt]
-            [clj-zoo-service-tracker.regionalRoutes :as regrts]
-            [clojure.reflect]
             [clojure.tools.logging :as log])
   (:gen-class))
+
+(defn- get-load-0
+  [instance-cache-ref service-instance]
+  (get-in @instance-cache-ref [:m (:server service-instance) :data :load]))
 
 (defn- get-load
   "given service-ref, instance-cache-ref and service instance,
@@ -54,23 +56,19 @@ fetch server instance load"
 
 (defn- lookup-latest
   "returns nil if no services available, else returns the highest versioned one"
-  [tracker-ref region service]
-  (dosync
-   (let [regional-routes-ref (:regional-routes-ref @tracker-ref)
-         regional-f-to-data (@regional-routes-ref region) 
-         regional-nodes (keys regional-f-to-data)
-         regional-for-service (filter (fn [item]
-                                        (= service
-                                           (:service (regional-value-of tracker-ref region item))))
-                                      regional-nodes)
-         regional-high-order (sort-by
-                              (partial major-minor-order-rev
-                                       (:file-to-data-ref @tracker-ref)
-                                       (:instance-cache-ref @tracker-ref))
-                              regional-for-service)]
-     (if (and regional-high-order (not (= regional-high-order '())))
-       (first regional-high-order)
-       nil))))
+  [instance-cache-ref services-ref region service]
+  (let [services (get-in @services-ref [region service])]
+    (when (and services (not (= {} services)))
+      (let [highest (reduce max (keys services))
+            highest-services (services highest)]
+        (when (and highest-services (not (= {} highest-services)))
+          (let [highest-minor (reduce max (keys highest-services))
+                highest-minor-services (highest-services highest-minor)
+                services-w-pay (map sc/service->payload-map
+                                    (vals highest-minor-services))
+                sorted (sort-by (partial get-load-0 instance-cache-ref)
+                                services-w-pay)]
+            (:url (first sorted))))))))
 
 (defn- lookup-services
   "returns nil if no services available, else returns a set of services
@@ -160,8 +158,7 @@ then (1 2 1) and (1 3 1) match, again (2 1 1) would not match."
 
 (defn lookup-service
   [tracker-ref service major minor uri client-id]
-  (let [routes-multi (:routes-multi @tracker-ref)
-        regions (keys @(:kids-ref @routes-multi))
+  (let [regions (keys @(:services-ref @tracker-ref))
         sorted-regions (allowed-regions-sorted (:my-region @tracker-ref) regions client-id)]
     (if (and (= major -1) (= minor -1))
       ;; this means the latest version (major minor combo)
@@ -258,7 +255,9 @@ then (1 2 1) and (1 3 1) match, again (2 1 1) would not match."
 (defn close
   [session]
   (let [cli-reg-cache (:client-reg-cache @session)
-        instance-cache (:instance-cache @session)]
+        instance-cache (:instance-cache @session)
+        services-cache (:services-cache @session)]
     (mapperc/close cli-reg-cache)
     (mapperc/close instance-cache)
+    (rc/close services-cache)
     (session/logout session)))

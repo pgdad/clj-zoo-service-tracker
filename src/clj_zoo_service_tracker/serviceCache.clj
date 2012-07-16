@@ -17,9 +17,10 @@
              (assoc m (->keyword k) v))
            {} entries)))
 
-(defn- service->payload-map
+(defn service->payload-map
   [service]
-  (->clj (.getPayload service)))
+  (let [result (->clj (.getPayload service))]
+    (assoc result :id (.getId service))))
 
 (defn- listener
   [f]
