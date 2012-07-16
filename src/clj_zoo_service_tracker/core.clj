@@ -54,6 +54,13 @@ fetch server instance load"
         regional-f-to-data (@regional-routes-ref region)]
     (regional-f-to-data service-instance)))
 
+(defn- lowest-load
+  [instance-cache-ref services]
+  (let [servs-w-pay (map sc/service->payload-map
+                            (vals services))
+        sorted (sort-by (partial get-load-0 instance-cache-ref) servs-w-pay)]
+    (first sorted)))
+
 (defn- lookup-latest
   "returns nil if no services available, else returns the highest versioned one"
   [instance-cache-ref services-ref region service]
@@ -63,12 +70,9 @@ fetch server instance load"
             highest-services (services highest)]
         (when (and highest-services (not (= {} highest-services)))
           (let [highest-minor (reduce max (keys highest-services))
-                highest-minor-services (highest-services highest-minor)
-                services-w-pay (map sc/service->payload-map
-                                    (vals highest-minor-services))
-                sorted (sort-by (partial get-load-0 instance-cache-ref)
-                                services-w-pay)]
-            (:url (first sorted))))))))
+                highest-minor-services (highest-services highest-minor)]
+            (:url
+             (lowest-load instance-cache-ref highest-minor-services))))))))
 
 (defn- lookup-services
   "returns nil if no services available, else returns a set of services
@@ -87,18 +91,17 @@ For example, if available services are:
 '(1 1 1), (1 2 1), (1 3 1) and <MAJOR> == 1, <MINOR> == 2,
 then (1 2 1) and (1 3 1) match, again (2 1 1) would not match."
 
-  [tracker-ref region service major minor]
+  [instance-cache-ref services-ref region service major minor]
   (log/spy :debug (str "LOOKUP SERVICES: " (list service major minor)))
-  (dosync
-   (let [regional-routes-ref (:regional-routes-ref @tracker-ref)
-         regional-f-to-data (@regional-routes-ref region) 
-         regional-nodes (keys regional-f-to-data)
-         regional-for-service (filter (fn [item]
-                                        (and (= service
-                                                (:service (regional-value-of tracker-ref
-                                                                             region item)))
-                                             (minor-filter regional-f-to-data item minor)))
-                                      regional-nodes)]
+  (let [services (get-in @services-ref [region service major])]
+    (when (and services (not (= {} services)))
+      (let [allowed-minors (filter #(<= minor %) (keys services))
+            allowed-services (select-keys services (vec allowed-minors))]
+        (println (str "LU SERVICES KEYS: " allowed-minors))
+        (println (str "LU SERICES: " (vals allowed-services)))
+        (lowest-load instance-cache-ref (vals (vals allowed-services))))))
+  #_(dosync
+   (let []
      (log/spy :debug (str "LOOKUP SERVICES for-service: " regional-for-service))
      (if (and regional-for-service (not (= regional-for-service '())))
        (do
