@@ -44,6 +44,7 @@
 
 (defn close
   [cache]
+  (println (str "CLOSING SERVICE CACHE: " cache))
   (.close (:cache @cache)))
 
 (defn instances
@@ -60,15 +61,14 @@
   (let [s-parts (clojure.string/split path #"/")
         name (last s-parts)
         region (nth s-parts 2)
-        discovery (s/sd-builder fWork path)
+        parent-path (clojure.string/replace path (str "/" name) "")
+        discovery (s/sd-builder fWork parent-path)
         c (-> discovery .serviceCacheBuilder (.name name) .build)
         _ (.start c)
         l (listener (fn [& args]
                       (dosync
                        (alter services-ref assoc-in [region name]
                               (-> c .getInstances instances->map)))))]
-    (dosync
-     (alter caches-ref assoc path c))
     (.addListener c l)
     (.cacheChanged l)
-    (atom {:discovery discovery :cache c :name name :listner l})))
+    (atom {:discovery discovery :cache c :name name :listener l :path path})))

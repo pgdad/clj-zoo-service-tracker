@@ -9,7 +9,7 @@
   [cache]
   (close (:cache @cache)))
 
-(defn- add-regional-cache
+(defn- add-service-cache
   [fWork services-ref caches-ref event]
   (let [event-data (.getData event)
         path (.getPath event-data)]
@@ -18,11 +18,12 @@
      (alter caches-ref assoc path (sc/cache fWork path services-ref caches-ref))))
   )
 
-(defn- rm-regional-cache
+(defn- rm-service-cache
   [fWork services-ref caches-ref event]
   (let [event-data (.getData event)
         path (.getPath event-data)
         cache (@caches-ref path)]
+    (println (str "REMOVE REGIONAL: " path))
     (close (:cache @cache))
     (dosync
      (alter caches-ref dissoc path))))
@@ -32,8 +33,8 @@
   [fWork path services-ref caches-ref]
   (let [watcher-cache (wc/cache fWork
                                 path
-                                (partial add-regional-cache fWork services-ref caches-ref)
-                                (partial rm-regional-cache fWork services-ref caches-ref)
+                                (partial add-service-cache fWork services-ref caches-ref)
+                                (partial rm-service-cache fWork services-ref caches-ref)
                                 nil
                                 nil)]
     (ref {:cache watcher-cache})))
