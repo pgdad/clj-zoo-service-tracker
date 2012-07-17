@@ -97,25 +97,8 @@ then (1 2 1) and (1 3 1) match, again (2 1 1) would not match."
     (when (and services (not (= {} services)))
       (let [allowed-minors (filter #(<= minor %) (keys services))
             allowed-services (select-keys services (vec allowed-minors))]
-        (println (str "LU SERVICES KEYS: " allowed-minors))
-        (println (str "LU SERICES: " (vals allowed-services)))
-        (lowest-load instance-cache-ref (vals (vals allowed-services))))))
-  #_(dosync
-   (let []
-     (log/spy :debug (str "LOOKUP SERVICES for-service: " regional-for-service))
-     (if (and regional-for-service (not (= regional-for-service '())))
-       (do
-         (first (sort-by (partial get-load
-                                  (:file-to-data-ref @tracker-ref)
-                                  (:instance-cache-ref @tracker-ref))
-                         regional-for-service)))
-       
-       nil))))
-
-(defn- regional-url-of
-  [tracker-ref region service-instance uri]
-  (log/spy :debug (str "REGIONAL URL of: " service-instance " Region: " region))
-  (str (:url (regional-value-of tracker-ref region service-instance)) uri))
+        (:url (lowest-load instance-cache-ref
+                           (first (flatten (vals allowed-services)))))))))
 
 ;; function to be used to filter out regions based on client id
 (defn- filter-lookup-regions
@@ -145,19 +128,23 @@ then (1 2 1) and (1 3 1) match, again (2 1 1) would not match."
   [regions tracker-ref my-region service uri]
   (loop [xs regions]
     (when (seq xs)
-      (let [latest (lookup-latest tracker-ref (first xs) service)]
+      (let [latest (lookup-latest (:instance-cache-ref @tracker-ref)
+                                  (:services-ref @tracker-ref)
+                                  (first xs) service)]
         (if-not latest
           (recur (next xs))
-          (regional-url-of tracker-ref (first xs) latest uri))))))
+          latest)))))
 
 (defn- lookup-services-in-regions
   [regions tracker-ref service major minor uri]
   (loop [xs regions]
     (when (seq xs)
-      (let [services (lookup-services tracker-ref (first xs) service major minor)]
+      (let [services (lookup-services (:instance-cache-ref @tracker-ref)
+                                      (:services-ref @tracker-ref)
+                                      (first xs) service major minor)]
         (if-not services
           (recur (next xs))
-          (regional-url-of tracker-ref (first xs) services uri))))))
+          services)))))
 
 (defn lookup-service
   [tracker-ref service major minor uri client-id]
