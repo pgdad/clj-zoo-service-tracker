@@ -1,64 +1,23 @@
 (ns clj-zoo-service-tracker.core
-  (:require [zookeeper :as zk]
-            [clj-zoo.session :as session]
-            [clj-zoo-watcher.core :as w]
-            [clj-zoo-watcher.multi :as mw]
+  (:require [clj-zoo.session :as session]
             [clj-zoo-watcher.cache :as c]
             [clj-zoo-watcher.mapper :as mapperc]
+            [clj-zoo-service-tracker.instanceCache :as icache]
             [clj-zoo-service-tracker.regionCache :as rc]
             [clj-zoo-service-tracker.serviceCache :as sc]
             [clj-zoo-service-tracker.util :as util] 
             [clojure.tools.logging :as log])
   (:gen-class))
 
-(defn- get-load-0
+(defn- get-load
   [instance-cache-ref service-instance]
   (get-in @instance-cache-ref [:m (:server service-instance) :data :load]))
-
-(defn- get-load
-  "given service-ref, instance-cache-ref and service instance,
-fetch server instance load"
- [service-ref load-ref item]
- (let [instance (get-in @service-ref [item :instance-node])
-       l (get-in @load-ref [:m instance :data :load])
-       res (if l l 0)]
-   res))
-
-(defn- major-minor-order-o
-  [instance-cache-ref item]
-  (let [current-load (get-in @instance-cache-ref [:m item :data :load])
-        l (if current-load current-load 0.0)]
-    ))
-
-(defn- major-minor-order
-  [service-ref load-ref item]
-  (let [serv-data (service-ref item)
-	current-load (get-load service-ref load-ref item)
-	res (+ (* 10000 (:major serv-data)) (* 100 (:minor serv-data)))]
-    res))
-
-(defn- major-minor-order-rev
-  [service-ref load-ref item]
-  (* -1 (major-minor-order service-ref load-ref item)))
-
-(defn- minor-filter
-  "major and minor are know"
-  [file-to-data item minor]
-  (let [serv-data (file-to-data item)]
-    (<= minor (:minor serv-data))))
-
-
-(defn- regional-value-of
-  [tracker-ref region service-instance]
-  (let [regional-routes-ref (:regional-routes-ref @tracker-ref)
-        regional-f-to-data (@regional-routes-ref region)]
-    (regional-f-to-data service-instance)))
 
 (defn- lowest-load
   [instance-cache-ref services]
   (let [servs-w-pay (map sc/service->payload-map
                             (vals services))
-        sorted (sort-by (partial get-load-0 instance-cache-ref) servs-w-pay)]
+        sorted (sort-by (partial get-load instance-cache-ref) servs-w-pay)]
     (first sorted)))
 
 (defn- lookup-latest
@@ -174,7 +133,7 @@ then (1 2 1) and (1 3 1) match, again (2 1 1) would not match."
 
 (defmacro instance-root-region-node
   [region]
-  `(str instance-root-node "/" ~region))
+  `(str "/servers/" ~region))
 
 (defn- create-non-existing-node
   [fWork node]
@@ -219,12 +178,10 @@ then (1 2 1) and (1 3 1) match, again (2 1 1) would not match."
         fWork (:fWork @z-session)
         services-ref (ref {})
         caches-ref (ref {})
-        instance-root (instance-root-region-node region)
 
         instance-cache-ref (ref {})
-        instance-cache (mapperc/mapper-cache fWork instance-cache-ref
-                                             instance-data-f
-                                             instance-root)
+        instance-cache (icache/instance-cache fWork instance-cache-ref
+                                              instance-data-f)
 
         services-cache (rc/cache fWork "/services" services-ref caches-ref)
 
